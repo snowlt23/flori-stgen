@@ -1,0 +1,84 @@
+
+import "core"
+import "core/pointer"
+import "jscore"
+
+cachestore := jsobj {}
+
+fn xhr_loaded(e Event) {
+  url := get[CString](cast[JSObj](e.currentTarget), "url")
+  callback := cast[Fn[CString]](get[JSObj](cast[JSObj](e.currentTarget), "callback"))
+  resp := cast[XMLHttpRequest](e.currentTarget).responseXML
+  set(cachestore, url, resp)
+  callback(url)
+}
+fn store_url(url CString, callback Fn[CString]) {
+  if (not(has_key(cachestore, url))) {
+    xhr := new_xmlhttprequest()
+    set(cast[JSObj](xhr), "url", url)
+    set(cast[JSObj](xhr), "callback", callback)
+    add_event_listener(xhr, "loadend", xhr_loaded)
+    open(xhr, "GET", url, true)
+    xhr.responseType = cstring("document")
+    send(xhr)
+  } else {
+    callback(url)
+  }
+}
+fn target_callback(url CString) {}
+fn target_over(e Event) {
+  url := get_attribute(e.currentTarget, "href")
+  store_url(url, target_callback)
+}
+
+var target_click_fn Fn[Event]
+
+fn pjax_hook(dom Element) {
+  targets := get_elements_by_tagname(dom, "a")
+  for (i : range(0, length(targets)-1)) {
+    url := get_attribute(targets!i, "href")
+    if (url!0 == c"/") {
+      add_event_listener(targets!i, "mouseover", target_over)
+      add_event_listener(targets!i, "click", target_click_fn)
+    }
+  }
+}
+
+fn reload_page(url CString) {
+  linkdom := get[Element](cachestore, url)
+  linktitledom := get_elements_by_tagname(linkdom, "title")!0
+  linkmaindom := get_element_by_id(linkdom, "pjax-main")
+  
+  origtitledom := get_elements_by_tagname("title")!0
+  origmaindom := get_element_by_id("pjax-main")
+  
+  origtitledom.innerHTML = linktitledom.innerHTML
+  origmaindom.innerHTML = linkmaindom.innerHTML
+  pjax_hook(origmaindom)
+}
+
+fn target_click(e Event) {
+  url := get_attribute(e.currentTarget, "href")
+  reload_page(url)
+  history_push_state(cast[JSObj](url), "", url)
+  prevent_default(e)
+}
+
+fn start_pjax() {
+  target_click_fn = target_click
+  pjax_hook(get_document())
+}
+
+fn popstate_store_callback(url CString) {
+  reload_page(url)
+}
+fn popstate_callback(e Event) {
+  if (cast[Bool](e.state)) {
+    url := cast[CString](e.state)
+    store_url(url, popstate_store_callback)
+  }
+}
+
+window_add_event_listener("popstate", popstate_callback)
+
+start_pjax()

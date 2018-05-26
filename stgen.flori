@@ -1,0 +1,33 @@
+
+import "core"
+import "core/pointer"
+import "html"
+import "doc"
+import "std/fileio"
+
+type Page {
+  link CString
+  title String
+  summary CString
+}
+
+macro define_site() FExpr {
+  quote {
+    pages := vec[Page]()
+  }
+}
+
+macro docgen(name FIdent, summary FBlock) FExpr $[syntax] {
+  namelit := new_fstrlit(to_cs(name))
+  filename := new_fstrlit(to_cs(string(to_cs(name)) & s".html"))
+  summarystr := s""
+  for (line : summary) {
+    push(summarystr, replace(get_srcexpr(line), "\n"!0, "\\n"))
+  }
+  summarylit := new_fstrlit(to_cs(summarystr))
+  quote {
+    import `namelit
+    push(pages, init(Page){cstring(`namelit); `name.title_src; cstring(`summarylit)})
+    write_file(to_cs(s"public/" & string(`filename)), to_cs(base_html(`name.title_src, `name.doc_src)))
+  }
+}
